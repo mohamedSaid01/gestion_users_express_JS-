@@ -1,5 +1,5 @@
 import bcrypt from 'bcryptjs';
-import { signupSchema, signinSchema } from '../middlewares/validatorUser.js';
+import { signupSchema, signinSchema, updateProfileSchema } from '../middlewares/validatorUser.js';
 import User from '../database/models/usersModel.js';
 import jwt from 'jsonwebtoken';
 import { comparePasswords } from '../utils/authUtils.js';
@@ -292,6 +292,128 @@ export const newPassword = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: 'Erreur serveur'
+    });
+  }
+};
+
+
+export const changePassword = async (req, res) => {
+  const { currentPassword, newPassword, confirmPassword } = req.body;
+  const userId = req.user.id;
+
+  try {
+    // 1. Validation des données
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'Tous les champs sont requis'
+      });
+    }
+
+    if (newPassword !== confirmPassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'Les nouveaux mots de passe ne correspondent pas'
+      });
+    }
+
+    // 2. Récupérer l'utilisateur avec le mot de passe
+    const user = await User.findById(userId).select('+password');
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'Utilisateur non trouvé'
+      });
+    }
+
+    // 3. Vérifier l'ancien mot de passe
+    const isPasswordValid = await bcrypt.compare(currentPassword, user.password);
+    if (!isPasswordValid) {
+      return res.status(401).json({
+        success: false,
+        message: 'Mot de passe actuel incorrect'
+      });
+    }
+
+    // 4. Vérifier que le nouveau mot de passe est différent
+    if (await bcrypt.compare(newPassword, user.password)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Le nouveau mot de passe doit être différent de l\'actuel'
+      });
+    }
+
+    // 5. Hacher et sauvegarder le nouveau mot de passe
+    const hashedPassword = await bcrypt.hash(newPassword, 12);
+    user.password = hashedPassword;
+    await user.save();
+
+    // 6. Réponse (on retire le mot de passe de la réponse)
+    user.password = undefined;
+
+    return res.status(200).json({
+      success: true,
+      message: 'Mot de passe mis à jour avec succès'
+    });
+
+  } catch (error) {
+    console.error('Erreur changement mot de passe:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Erreur serveur lors du changement de mot de passe'
+    });
+  }
+};
+
+
+export const updateUserProfile = async (req, res) => {
+  const userId = req.user.id;
+
+  try {
+    // 1. Validation avec Joi
+    const { error, value } = updateProfileSchema.validate(req.body, {
+      abortEarly: false
+    });
+
+    if (error) {
+      const errors = error.details.map(detail => ({
+        field: detail.path[0],
+        message: detail.message
+      }));
+      
+      return res.status(400).json({
+        success: false,
+        message: 'Erreurs de validation',
+        errors
+      });
+    }
+
+    // 2. Mise à jour de l'utilisateur
+    const updatedUser = await User.findByIdAndUpdate(
+      userId,
+      { $set: value },
+      { new: true, runValidators: true }
+    ).select('-password -resetPasswordCode -resetPasswordExpires');
+
+    if (!updatedUser) {
+      return res.status(404).json({
+        success: false,
+        message: 'Utilisateur non trouvé'
+      });
+    }
+
+    // 3. Réponse
+    return res.status(200).json({
+      success: true,
+      message: 'Profil mis à jour avec succès',
+      user: updatedUser
+    });
+
+  } catch (error) {
+    console.error('Erreur mise à jour profil:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Erreur serveur lors de la mise à jour'
     });
   }
 };

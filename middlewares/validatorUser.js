@@ -64,3 +64,45 @@ export const newPasswordSchema = Joi.object({
     .pattern(new RegExp('^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d).{8,}$'))
     .required()
 });
+
+
+export const updateProfileSchema = Joi.object({
+  firstName: Joi.string()
+    .min(2)
+    .max(50)
+    .messages({
+      'string.empty': 'Le prénom est requis',
+      'string.min': 'Le prénom doit contenir au moins 2 caractères',
+      'string.max': 'Le prénom ne peut dépasser 50 caractères'
+    }),
+
+  lastName: Joi.string()
+    .min(2)
+    .max(50)
+    .messages({
+      'string.empty': 'Le nom est requis',
+      'string.min': 'Le nom doit contenir au moins 2 caractères',
+      'string.max': 'Le nom ne peut dépasser 50 caractères'
+    }),
+
+  phone: Joi.string()
+    .pattern(/^[259]\d{7}$/)
+    .messages({
+      'string.pattern.base': 'Le téléphone doit contenir 8 chiffres commençant par 2, 5 ou 9'
+    }),
+
+  birthDate: Joi.date()
+    .less('now')
+    .messages({
+      'date.base': 'Date de naissance invalide',
+      'date.less': 'La date de naissance doit être dans le passé'
+    }),
+
+  address: Joi.string()
+    .max(200)
+    .messages({
+      'string.max': 'L\'adresse ne peut dépasser 200 caractères'
+    })
+}).min(1).messages({
+  'object.min': 'Au moins un champ doit être fourni pour la mise à jour'
+});
