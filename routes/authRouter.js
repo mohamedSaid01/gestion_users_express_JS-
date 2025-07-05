@@ -1,9 +1,16 @@
 import express from 'express';
-import { signup } from '../controllers/authController.js';
+import { signup, signin, signout, getCurrentUser, sendResetCode, validateResetCode, newPassword } from '../controllers/authController.js';
+import { verifyToken } from '../helpers/authMiddleware.js';
 
 const router = express.Router();
 
 router.post('/signup', signup);
+router.post('/signin', signin);   
+router.post('/signout', verifyToken ,signout);
+router.get('/me', verifyToken, getCurrentUser);
+router.post('/send-reset-code', sendResetCode);
+router.post('/validate-reset-code', validateResetCode);
+router.post('/new-password', newPassword);
 
 
 export default router;

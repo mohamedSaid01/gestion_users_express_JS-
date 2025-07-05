@@ -52,7 +52,11 @@ const userSchema = mongoose.Schema(
         },
         message: 'Birth date must be in the past'
       }
-    }
+    },
+      resetPasswordCode: String,
+      resetPasswordExpires: Date,
+      resetToken: String,          
+      resetTokenExpires: Date 
   },
   {
     timestamps: true,

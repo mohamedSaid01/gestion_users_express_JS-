@@ -48,3 +48,19 @@ export const signupSchema = Joi.object({
     .max(200)
     .allow(null, '')
 });
+
+
+export const signinSchema = Joi.object({
+  email: Joi.string().email().required(),
+  password: Joi.string().required()
+});
+
+
+export const newPasswordSchema = Joi.object({
+  userId: Joi.string().required(),
+  resetToken: Joi.string().required(),
+  newPassword: Joi.string()
+    .min(8)
+    .pattern(new RegExp('^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d).{8,}$'))
+    .required()
+});
