@@ -42,7 +42,7 @@ const userSchema = mongoose.Schema(
     },
     phone: {
       type: String,
-      trim: true,
+      trim: true
     },
     birthDate: {
       type: Date,
@@ -53,10 +53,28 @@ const userSchema = mongoose.Schema(
         message: 'Birth date must be in the past'
       }
     },
-      resetPasswordCode: String,
-      resetPasswordExpires: Date,
-      resetToken: String,          
-      resetTokenExpires: Date 
+    nb_connexions: {
+      type: Number,
+      default: 0,
+      min: [0, 'Number of connections cannot be negative']
+    },
+    duree_session: {
+      type: Number,
+      default: 0,
+      min: [0, 'Session duration cannot be negative']
+    },
+    category: {
+      type: String,
+      default: null
+    },
+    lastLogin: {
+      type: Date,
+      default: null
+    },
+    resetPasswordCode: String,
+    resetPasswordExpires: Date,
+    resetToken: String,          
+    resetTokenExpires: Date 
   },
   {
     timestamps: true,
@@ -65,12 +83,10 @@ const userSchema = mongoose.Schema(
   }
 );
 
-// Virtual pour le nom complet
 userSchema.virtual('fullName').get(function() {
   return `${this.firstName} ${this.lastName}`;
 });
 
-// Virtual pour l'âge
 userSchema.virtual('age').get(function() {
   if (!this.birthDate) return null;
   const diff = Date.now() - this.birthDate.getTime();

@@ -1,5 +1,5 @@
 import express from 'express';
-import { signup, signin, signout, getCurrentUser, sendResetCode, validateResetCode, newPassword, changePassword, updateUserProfile } from '../controllers/authController.js';
+import { signup, signin, signout, getCurrentUser, sendResetCode, validateResetCode, newPassword, changePassword, updateUserProfile, predictUserCategory, predictAllUsers } from '../controllers/authController.js';
 import { verifyToken } from '../helpers/authMiddleware.js';
 
 const router = express.Router();
@@ -13,6 +13,8 @@ router.post('/validate-reset-code', validateResetCode);
 router.post('/new-password', newPassword);
 router.post('/change-password', verifyToken, changePassword);
 router.patch('/update-profile', verifyToken, updateUserProfile);
+router.get('/predict', verifyToken, predictUserCategory); 
+router.get('/predict-all', verifyToken, predictAllUsers);
 
 
 export default router;

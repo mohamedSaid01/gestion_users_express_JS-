@@ -9,3 +9,4 @@ export const comparePasswords = async (candidatePassword, hashedPassword) => {
     return false;
   }
 };
+  

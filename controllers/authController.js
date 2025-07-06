@@ -5,10 +5,11 @@ import jwt from 'jsonwebtoken';
 import { comparePasswords } from '../utils/authUtils.js';
 import { sendResetCodeByEmail } from '../utils/passwordReset.js';
 import { randomBytes } from 'crypto';
+import axios from 'axios';
 
-
+// Inscription d'un nouvel utilisateur
 export const signup = async (req, res) => {
-  const { email, password, firstName, lastName, phone, birthDate, address } = req.body;
+  const { email, password, firstName, lastName, phone, birthDate, address, nb_connexions = 0, duree_session = 0 } = req.body;
   
   try {
     const { error } = signupSchema.validate(req.body, { abortEarly: false });
@@ -40,7 +41,10 @@ export const signup = async (req, res) => {
       phone: phone || null,
       birthDate: birthDate || null,
       address: address || null,
-      role: 'user'
+      role: 'user',
+      nb_connexions,
+      duree_session,
+      lastLogin: null
     });
 
     const savedUser = await newUser.save();
@@ -51,7 +55,6 @@ export const signup = async (req, res) => {
       message: 'Account created successfully',
       user: savedUser
     });
-
   } catch (error) {
     console.error('Signup error:', error);
     res.status(500).json({ 
@@ -62,12 +65,18 @@ export const signup = async (req, res) => {
   }
 };
 
-
+// Connexion d'un utilisateur
 export const signin = async (req, res) => {
+  if (!req.body) {
+    return res.status(400).json({
+      success: false,
+      message: 'Request body is missing'
+    });
+  }
+
   const { email, password } = req.body;
 
   try {
-    // 1. Validation Joi
     const { error } = signinSchema.validate(req.body);
     if (error) {
       return res.status(400).json({
@@ -76,7 +85,6 @@ export const signin = async (req, res) => {
       });
     }
 
-    // 2. Vérifier si l'utilisateur existe
     const user = await User.findOne({ email }).select('+password');
     if (!user) {
       return res.status(401).json({
@@ -85,7 +93,6 @@ export const signin = async (req, res) => {
       });
     }
 
-    // 3. Comparer les mots de passe
     const isMatch = await comparePasswords(password, user.password);
     if (!isMatch) {
       return res.status(401).json({
@@ -94,21 +101,23 @@ export const signin = async (req, res) => {
       });
     }
 
-    // 4. Générer le token JWT
+    // Incrémenter nb_connexions et enregistrer l'heure de connexion
+    user.nb_connexions += 1;
+    user.lastLogin = new Date();
+    await user.save();
+
     const token = jwt.sign(
       { id: user._id, role: user.role },
       process.env.TOKEN_SECRET,
       { expiresIn: '8h' }
     );
 
-        res
-      .cookie('Authorization', 'Bearer ' + token, {
-        expires: new Date(Date.now() + 8 * 3600000),
-        httpOnly: process.env.NODE_ENV,
-        secure: process.env.NODE_ENV,
-      })
+    res.cookie('Authorization', 'Bearer ' + token, {
+      expires: new Date(Date.now() + 8 * 3600000),
+      httpOnly: process.env.NODE_ENV === 'production',
+      secure: process.env.NODE_ENV === 'production'
+    });
 
-    // 5. Réponse sans le mot de passe
     const userWithoutPassword = user.toObject();
     delete userWithoutPassword.password;
 
@@ -118,7 +127,6 @@ export const signin = async (req, res) => {
       token,
       user: userWithoutPassword
     });
-
   } catch (error) {
     console.error('Signin error:', error);
     res.status(500).json({
@@ -128,14 +136,54 @@ export const signin = async (req, res) => {
   }
 };
 
+// Déconnexion
 export const signout = async (req, res) => {
-  res
-    .clearCookie('Authorization')
-    .status(200)
-    .json({ success: true, message: 'logged out successfully' });
+  try {
+    // Récupérer l'utilisateur à partir du token
+    const authHeader = req.cookies.Authorization;
+    const token = authHeader && authHeader.split(' ')[1];
+
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        message: 'Aucun token fourni'
+      });
+    }
+
+    const decoded = jwt.verify(token, process.env.TOKEN_SECRET);
+    const user = await User.findById(decoded.id);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'Utilisateur non trouvé'
+      });
+    }
+
+    // Calculer la durée de la session si lastLogin existe
+    if (user.lastLogin) {
+      const currentTime = new Date();
+      const sessionDurationMs = currentTime - user.lastLogin; // Durée en millisecondes
+      const sessionDurationMinutes = Math.floor(sessionDurationMs / 60000); // Convertir en minutes
+      user.duree_session += sessionDurationMinutes; // Ajouter à duree_session
+      user.lastLogin = null; // Réinitialiser lastLogin
+      await user.save();
+    }
+
+    res
+      .clearCookie('Authorization')
+      .status(200)
+      .json({ success: true, message: 'Logged out successfully' });
+  } catch (error) {
+    console.error('Signout error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erreur serveur lors de la déconnexion'
+    });
+  }
 };
 
-
+// Obtenir l'utilisateur actuel
 export const getCurrentUser = async (req, res) => {
   try {
     const { id } = req.user;
@@ -153,7 +201,7 @@ export const getCurrentUser = async (req, res) => {
   }
 };
 
-
+// Envoyer un code de réinitialisation
 export const sendResetCode = async (req, res) => {
   const { email } = req.body;
 
@@ -180,12 +228,11 @@ export const sendResetCode = async (req, res) => {
   }
 };
 
-
+// Valider le code de réinitialisation
 export const validateResetCode = async (req, res) => {
   const { code } = req.body;
 
   try {
-    // 1. Trouver l'utilisateur avec code non expiré
     const user = await User.findOne({
       resetPasswordExpires: { $gt: Date.now() }
     });
@@ -197,7 +244,6 @@ export const validateResetCode = async (req, res) => {
       });
     }
 
-    // 2. Vérifier le code
     const isCodeValid = await bcrypt.compare(code, user.resetPasswordCode);
     if (!isCodeValid) {
       return res.status(400).json({
@@ -206,17 +252,15 @@ export const validateResetCode = async (req, res) => {
       });
     }
 
-    // 3. Générer et stocker un token
     const resetToken = randomBytes(32).toString('hex');
     user.resetToken = resetToken;
-    user.resetTokenExpires = Date.now() + 3600000; // 1 heure
+    user.resetTokenExpires = Date.now() + 3600000;
     await user.save();
 
-    // 4. Réponse avec cookie httpOnly
     res.cookie('resetToken', resetToken, {
       httpOnly: true,
-      secure: process.env.NODE_ENV,
-      maxAge: 3600000, // 1 heure
+      secure: process.env.NODE_ENV === 'production',
+      maxAge: 3600000,
       sameSite: 'strict'
     });
 
@@ -224,7 +268,6 @@ export const validateResetCode = async (req, res) => {
       success: true,
       message: 'Code validé'
     });
-
   } catch (error) {
     console.error('Erreur:', error);
     return res.status(500).json({
@@ -234,12 +277,11 @@ export const validateResetCode = async (req, res) => {
   }
 };
 
-
+// Réinitialiser le mot de passe
 export const newPassword = async (req, res) => {
   const { newPassword, confirmPassword } = req.body;
 
   try {
-    // 1. Récupérer le token depuis les cookies
     const resetToken = req.cookies.resetToken;
     
     if (!resetToken) {
@@ -249,7 +291,6 @@ export const newPassword = async (req, res) => {
       });
     }
 
-    // 2. Vérifier l'utilisateur et le token
     const user = await User.findOne({
       resetToken,
       resetTokenExpires: { $gt: Date.now() }
@@ -262,7 +303,6 @@ export const newPassword = async (req, res) => {
       });
     }
 
-    // 3. Valider les mots de passe
     if (newPassword !== confirmPassword) {
       return res.status(400).json({
         success: false,
@@ -270,7 +310,6 @@ export const newPassword = async (req, res) => {
       });
     }
 
-    // 4. Mettre à jour le mot de passe et nettoyer
     user.password = await bcrypt.hash(newPassword, 12);
     user.resetToken = undefined;
     user.resetTokenExpires = undefined;
@@ -278,7 +317,6 @@ export const newPassword = async (req, res) => {
     user.resetPasswordExpires = undefined;
     await user.save();
 
-    // 5. Réponse + suppression du cookie
     return res
       .clearCookie('resetToken')
       .status(200)
@@ -286,7 +324,6 @@ export const newPassword = async (req, res) => {
         success: true,
         message: 'Mot de passe réinitialisé'
       });
-
   } catch (error) {
     console.error('Erreur:', error);
     return res.status(500).json({
@@ -296,13 +333,12 @@ export const newPassword = async (req, res) => {
   }
 };
 
-
+// Changer le mot de passe
 export const changePassword = async (req, res) => {
   const { currentPassword, newPassword, confirmPassword } = req.body;
   const userId = req.user.id;
 
   try {
-    // 1. Validation des données
     if (!currentPassword || !newPassword || !confirmPassword) {
       return res.status(400).json({
         success: false,
@@ -317,7 +353,6 @@ export const changePassword = async (req, res) => {
       });
     }
 
-    // 2. Récupérer l'utilisateur avec le mot de passe
     const user = await User.findById(userId).select('+password');
     if (!user) {
       return res.status(404).json({
@@ -326,7 +361,6 @@ export const changePassword = async (req, res) => {
       });
     }
 
-    // 3. Vérifier l'ancien mot de passe
     const isPasswordValid = await bcrypt.compare(currentPassword, user.password);
     if (!isPasswordValid) {
       return res.status(401).json({
@@ -335,7 +369,6 @@ export const changePassword = async (req, res) => {
       });
     }
 
-    // 4. Vérifier que le nouveau mot de passe est différent
     if (await bcrypt.compare(newPassword, user.password)) {
       return res.status(400).json({
         success: false,
@@ -343,19 +376,16 @@ export const changePassword = async (req, res) => {
       });
     }
 
-    // 5. Hacher et sauvegarder le nouveau mot de passe
     const hashedPassword = await bcrypt.hash(newPassword, 12);
     user.password = hashedPassword;
     await user.save();
 
-    // 6. Réponse (on retire le mot de passe de la réponse)
     user.password = undefined;
 
     return res.status(200).json({
       success: true,
       message: 'Mot de passe mis à jour avec succès'
     });
-
   } catch (error) {
     console.error('Erreur changement mot de passe:', error);
     return res.status(500).json({
@@ -365,12 +395,11 @@ export const changePassword = async (req, res) => {
   }
 };
 
-
+// Mettre à jour le profil utilisateur
 export const updateUserProfile = async (req, res) => {
   const userId = req.user.id;
 
   try {
-    // 1. Validation avec Joi
     const { error, value } = updateProfileSchema.validate(req.body, {
       abortEarly: false
     });
@@ -388,7 +417,6 @@ export const updateUserProfile = async (req, res) => {
       });
     }
 
-    // 2. Mise à jour de l'utilisateur
     const updatedUser = await User.findByIdAndUpdate(
       userId,
       { $set: value },
@@ -402,18 +430,131 @@ export const updateUserProfile = async (req, res) => {
       });
     }
 
-    // 3. Réponse
     return res.status(200).json({
       success: true,
       message: 'Profil mis à jour avec succès',
       user: updatedUser
     });
-
   } catch (error) {
     console.error('Erreur mise à jour profil:', error);
     return res.status(500).json({
       success: false,
       message: 'Erreur serveur lors de la mise à jour'
+    });
+  }
+};
+
+// Prédire la catégorie de l'utilisateur
+export const predictUserCategory = async (req, res) => {
+  const userId = req.user.id;
+
+  try {
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'Utilisateur non trouvé'
+      });
+    }
+
+    if (user.role === 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Les prédictions ne s\'appliquent pas aux administrateurs'
+      });
+    }
+
+    const response = await axios.post('http://localhost:5000/predict', {
+      nb_connexions: user.nb_connexions,
+      duree_session: user.duree_session
+    });
+
+    const category = response.data.prediction;
+
+    user.category = category;
+    await user.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Prédiction réussie',
+      user: {
+        username: user.fullName,
+        nb_connexions: user.nb_connexions,
+        duree_session: user.duree_session,
+        category
+      }
+    });
+  } catch (error) {
+    console.error('Erreur lors de la prédiction:', error.message);
+    res.status(500).json({
+      success: false,
+      message: 'Erreur lors de la prédiction',
+      error: error.message
+    });
+  }
+};
+
+// Prédire la catégorie de tous les utilisateurs
+export const predictAllUsers = async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Accès refusé : réservé aux administrateurs'
+      });
+    }
+
+    const users = await User.find({ role: 'user' }).select('firstName lastName nb_connexions duree_session category');
+
+    if (!users || users.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Aucun utilisateur non-admin trouvé'
+      });
+    }
+
+    const predictions = [];
+    for (const user of users) {
+      try {
+        const response = await axios.post('http://localhost:5000/predict', {
+          nb_connexions: user.nb_connexions,
+          duree_session: user.duree_session
+        });
+
+        const category = response.data.prediction;
+
+        user.category = category;
+        await user.save();
+
+        predictions.push({
+          username: user.fullName,
+          nb_connexions: user.nb_connexions,
+          duree_session: user.duree_session,
+          category
+        });
+      } catch (error) {
+        console.error(`Erreur lors de la prédiction pour l'utilisateur ${user.fullName}:`, error.message);
+        predictions.push({
+          username: user.fullName,
+          nb_connexions: user.nb_connexions,
+          duree_session: user.duree_session,
+          category: null,
+          error: `Erreur lors de la prédiction : ${error.message}`
+        });
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Prédictions terminées pour tous les utilisateurs non-admin',
+      predictions
+    });
+  } catch (error) {
+    console.error('Erreur lors de la prédiction pour tous les utilisateurs:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erreur serveur lors de la prédiction',
+      error: error.message
     });
   }
 };

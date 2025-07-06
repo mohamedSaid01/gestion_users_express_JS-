@@ -46,15 +46,29 @@ export const signupSchema = Joi.object({
 
   address: Joi.string()
     .max(200)
-    .allow(null, '')
-});
+    .allow(null, ''),
 
+  nb_connexions: Joi.number()
+    .min(0)
+    .optional()
+    .default(0)
+    .messages({
+      'number.min': 'Number of connections cannot be negative'
+    }),
+
+  duree_session: Joi.number()
+    .min(0)
+    .optional()
+    .default(0)
+    .messages({
+      'number.min': 'Session duration cannot be negative'
+    })
+});
 
 export const signinSchema = Joi.object({
   email: Joi.string().email().required(),
   password: Joi.string().required()
 });
-
 
 export const newPasswordSchema = Joi.object({
   userId: Joi.string().required(),
@@ -64,7 +78,6 @@ export const newPasswordSchema = Joi.object({
     .pattern(new RegExp('^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d).{8,}$'))
     .required()
 });
-
 
 export const updateProfileSchema = Joi.object({
   firstName: Joi.string()
@@ -102,6 +115,20 @@ export const updateProfileSchema = Joi.object({
     .max(200)
     .messages({
       'string.max': 'L\'adresse ne peut dépasser 200 caractères'
+    }),
+
+  nb_connexions: Joi.number()
+    .min(0)
+    .optional()
+    .messages({
+      'number.min': 'Number of connections cannot be negative'
+    }),
+
+  duree_session: Joi.number()
+    .min(0)
+    .optional()
+    .messages({
+      'number.min': 'Session duration cannot be negative'
     })
 }).min(1).messages({
   'object.min': 'Au moins un champ doit être fourni pour la mise à jour'
