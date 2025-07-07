@@ -71,6 +71,23 @@ const userSchema = mongoose.Schema(
       type: Date,
       default: null
     },
+    failedLoginAttempts: {
+      type: Number,
+      default: 0,
+      min: [0, 'Failed login attempts cannot be negative']
+    },
+    lastFailedLogin: {
+      type: Date,
+      default: null
+    },
+    isLocked: {
+      type: Boolean,
+      default: false
+    },
+    lockUntil: {
+      type: Date,
+      default: null
+    },
     resetPasswordCode: String,
     resetPasswordExpires: Date,
     resetToken: String,          
